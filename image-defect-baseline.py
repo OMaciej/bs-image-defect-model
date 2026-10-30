@@ -63,7 +63,7 @@ def compute_image_features(img_path):
     sobel_mag = np.sqrt(grad_x ** 2 + grad_y ** 2)
     blurred_sobel_mag = np.sqrt(blurred_grad_x ** 2 + blurred_grad_y ** 2)
 
-    grad_retention_global = np.mean(sobel_mag) / np.mean(blurred_sobel_mag) + EPSILON
+    grad_retention_global = np.mean(sobel_mag) / (np.mean(blurred_sobel_mag) + EPSILON)
 
     # Features for determining edge of splat.
     # We consider the border of the image, because this defect is almost
@@ -111,7 +111,7 @@ if __name__ == '__main__':
     df = pd.read_csv(CSV_PATH)
 
     x = get_features(df)
-    y = df[['blur_fraction']].values.astype(np.float32)
+    y = df['blur_fraction'].values.astype(np.float32)
 
     # We divide into a train set and a test set without splitting data
     # from the same set into different sets.
