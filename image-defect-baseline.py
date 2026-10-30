@@ -3,8 +3,10 @@ import cv2
 import numpy as np
 import pandas as pd
 
+from xgboost import XGBRegressor
 from concurrent.futures import ProcessPoolExecutor
 from sklearn.model_selection import GroupShuffleSplit
+from sklearn.metrics import f1_score
 
 # Constants
 CSV_PATH = 'data/partialdata.csv'
@@ -88,9 +90,9 @@ def compute_image_features(img_path):
         [laplacian_var, laplacian_mean, patch_lap_median,
          patch_lap_p25, patch_lap_p90, patch_lap_p90_to_med,
          smooth_patches_lt2, smooth_patches_lt10,
-         grad_retention_global,
-         dark_pixels_ratio_global, bright_pixels_ratio_global,
-         dark_pixels_ratio_border, bright_pixels_ratio_border], 
+         grad_retention_global],
+         #dark_pixels_ratio_global, bright_pixels_ratio_global,
+         #dark_pixels_ratio_border, bright_pixels_ratio_border], 
         dtype=np.float32)
 
 def get_features(df):
@@ -106,15 +108,38 @@ def get_features(df):
     return np.vstack(features)
 
 if __name__ == '__main__':
-    df = pd.read_csv(CSV_PATH, nrows=128)
+    df = pd.read_csv(CSV_PATH)
 
     x = get_features(df)
-    y = df[LABELS].values.astype(np.float32)
+    y = df[['blur_fraction']].values.astype(np.float32)
 
     # We divide into a train set and a test set without splitting data
     # from the same set into different sets.
     splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=67)
-    test_idx, train_idx = next(splitter.split(df, groups=df['set']))
+    train_idx, test_idx = next(splitter.split(df, groups=df['set']))
 
     x_train, y_train = x[train_idx], y[train_idx]
     x_test, y_test = x[test_idx], y[test_idx]
+
+    model = XGBRegressor(
+        n_estimators=400,
+        max_depth=6,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="binary:logistic",
+        eval_metric="logloss",
+        random_state=67,
+        n_jobs=-1
+    )
+
+    model.fit(x_train, y_train, verbose=50)
+
+    y_pred = model.predict(x_test)
+
+    y_test_bin = (y_test >= 0.5).astype(int)
+    y_pred_bin = (y_pred >= 0.5).astype(int)
+
+    f1 = f1_score(y_test_bin, y_pred_bin)
+
+    print("F1: " + str(f1))
