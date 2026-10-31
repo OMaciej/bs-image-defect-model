@@ -129,9 +129,9 @@ def compute_image_features(img_path):
 
     # Proportion of border patches that are at least 5 times smoother than the 
     # inner image.
-    rel_dead_border_ratio = float(np.median(border_lap_var < 0.2 * inner_lap_med))
+    rel_dead_border_ratio = float(np.mean(border_lap_var < 0.2 * inner_lap_med))
 
-    abs_dead_border_ratio = float(np.median(border_lap_var < 0.2))
+    abs_dead_border_ratio = float(np.mean(border_lap_var < 0.2))
 
     # Now, rather than consider the border of our 8x12 grid, we consider a
     # border of the size (0.11 * image height) x (0.11 * image_width)
