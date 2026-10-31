@@ -11,8 +11,12 @@ from sklearn.metrics import f1_score, mean_absolute_error
 # Constants
 CSV_PATH = 'data/splatdata.csv'
 IMG_DIR_PATH = 'data/images/'
-LABELS = ['edge_fraction', 'visgauss_fraction', 'blur_fraction', 'unreal_fraction']
+FINAL_MODEL_SAVE_DIR ='model'
+FINAL_MODEL_SAVE_NAME = 'baseline.json'
+
 EPSILON = 1e-6
+
+LABELS = ['edge_fraction', 'visgauss_fraction', 'blur_fraction', 'unreal_fraction']
 FEATURE_NAMES = ['laplacian_var', 'laplacian_mean', 'laplacian_mean_norm', 'patch_lap_median',
          'patch_lap_p25', 'patch_lap_p90', 
          'smooth_patches_lt2', 'smooth_patches_lt10',
@@ -370,4 +374,28 @@ if __name__ == '__main__':
     }).sort_values('importance', ascending=False)
 
     print(importance_df)
-    print(np.mean(feature_importances))
+
+    # We create a final model and save it.
+    final_model = XGBRegressor(
+        n_estimators=250,
+        max_depth=4,
+        learning_rate=0.03,
+        min_child_weight=10,
+        reg_lambda=5.0,
+        reg_alpha=1.0,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="binary:logistic",
+        eval_metric="logloss",
+        random_state=67,
+        n_jobs=-1
+    )
+
+    print ('\nTraining final model.')
+    final_model.fit(x, y)
+    print('Saving final model')
+
+    if not os.path.isdir(FINAL_MODEL_SAVE_DIR):
+        os.makedirs(FINAL_MODEL_SAVE_DIR)
+
+    final_model.save_model(os.path.join(FINAL_MODEL_SAVE_DIR, FINAL_MODEL_SAVE_NAME))
