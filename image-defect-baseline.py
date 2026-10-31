@@ -13,26 +13,33 @@ CSV_PATH = 'data/splatdata.csv'
 IMG_DIR_PATH = 'data/images/'
 FINAL_MODEL_SAVE_DIR ='model'
 FINAL_MODEL_SAVE_NAME = 'baseline.json'
+DISPLAY_FEATURE_IMPORTANCES = False
+
+# The width and height of the grid we will be dividing the image into (measured
+# in patches).
+GRID_WIDTH = 12
+GRID_HEIGHT = 8
 
 EPSILON = 1e-6
 
-LABELS = ['edge_fraction', 'visgauss_fraction', 'blur_fraction', 'unreal_fraction']
-FEATURE_NAMES = ['laplacian_var', 'laplacian_mean', 'laplacian_mean_norm', 'patch_lap_median',
-         'patch_lap_p25', 'patch_lap_p90', 
-         'smooth_patches_lt2', 'smooth_patches_lt10',
-         'grad_retention_global', 'grad_ret_p25', 'grad_ret_p90',
-        'border_min_4_lap_to_inner', 'border_p15_lap_to_inner',
-         'abs_dead_border_ratio', 
-         'border_smooth_lap_max', 'border_min4_mf_to_inner',
-        'st_coh_mean', 'st_coh_p95', 'hf_coh_mean', 'hf_coh_p90',
-         'mf_coh_p90',
-         'needle_p99_to_mean', 'line_to_disk_ratio', 'color_cast_ratio',
-         'chroma_p95', 'patch_std_cv', 'black_void']
+LABELS = ['edge_fraction', 'visgauss_fraction', 
+          'blur_fraction', 'unreal_fraction']
+
+FEATURE_NAMES = [
+        'laplacian_var', 'laplacian_mean', 'laplacian_mean_norm', 
+        'patch_lap_median', 'patch_lap_p25', 'patch_lap_p90', 'smooth_patches_lt2',
+        'smooth_patches_lt10', 'grad_retention_global', 'grad_ret_p25', 
+        'grad_ret_p90', 'border_min_4_lap_to_inner', 'border_p15_lap_to_inner',
+        'abs_dead_border_ratio', 'border_smooth_lap_max', 
+        'border_min4_mf_to_inner', 'st_coh_mean', 'st_coh_p95', 'hf_coh_mean', 
+        'hf_coh_p90', 'mf_coh_p90', 'needle_p99_to_mean', 'line_to_disk_ratio', 
+        'color_cast_ratio', 'chroma_p95', 'patch_std_cv', 'black_void'
+    ]
 
 def _make_line_kernels(length=15):
     kernels = []
     c = length // 2
-    for angle_idx in range(4):  # 0, 45, 90, 135 stopni
+    for angle_idx in range(4):  # 0, 45, 90, 135 degrees
         theta = angle_idx * np.pi / 4.0
         k = np.zeros((length, length), dtype=np.uint8)
         dx = int(round(c * np.cos(theta)))
@@ -52,7 +59,6 @@ def compute_image_features(img_path):
 
     img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
 
-    gray_mean = float(np.mean(img_gray))
     gray_std = float(np.std(img_gray))
 
     # Features for determining blur.
@@ -67,12 +73,12 @@ def compute_image_features(img_path):
 
     # We divide the image into 60x53 segments and calculate the
     # variance of the laplacian in each one.
-    grid_height, grid_width = height // 8, width // 12
+    patch_height, patch_width = height // GRID_HEIGHT, width // GRID_WIDTH
 
     patch_lap_vars = [
-        np.var(lap[r * grid_height:(r + 1) * grid_height, 
-                   c * grid_width:(c + 1) * grid_width])
-        for r in range(8) for c in range(12)
+        np.var(lap[r * patch_height:(r + 1) * patch_height, 
+                   c * patch_width:(c + 1) * patch_width])
+        for r in range(GRID_HEIGHT) for c in range(GRID_WIDTH)
     ]
 
     patch_lap_vars = np.array(patch_lap_vars, dtype=np.float32)
@@ -80,7 +86,6 @@ def compute_image_features(img_path):
     patch_lap_median = float(np.median(patch_lap_vars))
     patch_lap_p25 = float(np.percentile(patch_lap_vars, 25))
     patch_lap_p90 = float(np.percentile(patch_lap_vars, 90))
-    patch_lap_p90_to_med = float(patch_lap_p90 / (patch_lap_median + EPSILON))
     smooth_patches_lt2 = float(np.mean(patch_lap_vars < 2.0))
     smooth_patches_lt10 = float(np.mean(patch_lap_vars < 10.0))
 
@@ -98,7 +103,8 @@ def compute_image_features(img_path):
     sobel_mag = np.sqrt(grad_x ** 2 + grad_y ** 2)
     blurred_sobel_mag = np.sqrt(blurred_grad_x ** 2 + blurred_grad_y ** 2)
 
-    grad_retention_global = float(np.mean(blurred_sobel_mag) / (np.mean(sobel_mag) + EPSILON))
+    grad_retention_global = float(np.mean(blurred_sobel_mag) / 
+                                  (np.mean(sobel_mag) + EPSILON))
 
     # Used later for detecting edge of splat.
     img_blurred_fine = cv2.GaussianBlur(img_gray, (0, 0), 1.5)
@@ -109,20 +115,20 @@ def compute_image_features(img_path):
     # We divide the image into segments and calculate various properties for
     # each segment.
     patch_grad_retention = []
-    grid_lap_var = np.zeros((8, 12), dtype=np.float32)
-    grid_lap_mean = np.zeros((8, 12), dtype=np.float32)
-    grid_mf_mean = np.zeros((8, 12), dtype=np.float32)
+    grid_lap_var = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.float32)
+    grid_lap_mean = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.float32)
+    grid_mf_mean = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.float32)
 
-    for row in range(8):
-        for column in range(12):
-            r_0, r_1 = row * grid_height, (row + 1) * grid_height
-            c_0, c_1 = column * grid_width, (column + 1) * grid_width
+    for row in range(GRID_HEIGHT):
+        for column in range(GRID_WIDTH):
+            r_0, r_1 = row * patch_height, (row + 1) * patch_height
+            c_0, c_1 = column * patch_width, (column + 1) * patch_width
 
             patch_smag = sobel_mag[r_0:r_1, c_0:c_1]
             patch_bsmag = blurred_sobel_mag[r_0:r_1, c_0:c_1]
-            patch_grad_retention.append(float(np.mean(patch_bsmag) / (np.mean(patch_smag) + EPSILON)))
+            patch_grad_retention.append(float(np.mean(patch_bsmag) / 
+                                              (np.mean(patch_smag) + EPSILON)))
 
-            grid_lap_var[row, column] = np.var(lap[r_0:r_1, c_0:c_1])
             grid_lap_mean[row, column] = np.mean(lap[r_0:r_1, c_0:c_1])
 
             grid_mf_mean[row, column] = np.mean(mf_map[r_0:r_1, c_0:c_1])
@@ -135,7 +141,7 @@ def compute_image_features(img_path):
     # Features for determining edge of splat.
     # We consider the border of the image, because this defect is almost
     # always most visible at the edges.
-    border_ring_mask = np.zeros((8, 12), dtype=bool)
+    border_ring_mask = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=bool)
     border_ring_mask[0, :] = True
     border_ring_mask[-1, :] = True
     border_ring_mask[:, 0] = True
@@ -195,7 +201,6 @@ def compute_image_features(img_path):
     mf_yy = cv2.GaussianBlur(mf_gy * mf_gy, (0, 0), 5.0)
     mf_xy = cv2.GaussianBlur(mf_gx * mf_gy, (0, 0), 5.0)
     mf_coh = np.sqrt((mf_xx - mf_yy) ** 2 + 4.0 * (mf_xy ** 2)) / (mf_xx + mf_yy + 0.5)
-    mf_coh_mean = float(np.mean(mf_coh))
     mf_coh_p90 = float(np.percentile(mf_coh, 90))
 
     open_disk = cv2.morphologyEx(img_gray, cv2.MORPH_OPEN, DISK_KERNEL_9)
@@ -205,25 +210,24 @@ def compute_image_features(img_path):
     needle_resp = np.maximum(tophat, blackhat)
     needle_p99_to_mean = float(np.percentile(needle_resp, 99) / (np.mean(needle_resp) + EPSILON))
 
-    sup_open_line = np.max([cv2.morphologyEx(img_gray, cv2.MORPH_OPEN, k) for k in LINE_KERNELS_15], axis=0)
-    inf_close_line = np.min([cv2.morphologyEx(img_gray, cv2.MORPH_CLOSE, k) for k in LINE_KERNELS_15], axis=0)
+    sup_open_line = np.max([cv2.morphologyEx(img_gray, cv2.MORPH_OPEN, k) 
+                            for k in LINE_KERNELS_15], axis=0)
+    
+    inf_close_line = np.min([cv2.morphologyEx(img_gray, cv2.MORPH_CLOSE, k) 
+                             for k in LINE_KERNELS_15], axis=0)
+    
     line_only = np.maximum(np.maximum(0.0, sup_open_line - open_disk),
                            np.maximum(0.0, close_disk - inf_close_line))
+    
     line_to_disk_ratio = float(np.mean(line_only) / (np.mean(needle_resp) + EPSILON))
     
     Jxx = cv2.GaussianBlur(grad_x * grad_x, (15, 15), 3.0)
     Jyy = cv2.GaussianBlur(grad_y * grad_y, (15, 15), 3.0)
     Jxy = cv2.GaussianBlur(grad_x * grad_y, (15, 15), 3.0)
     coherence = np.sqrt((Jxx - Jyy)**2 + 4.0 * (Jxy**2)) / (Jxx + Jyy + 1.0)
+
     st_coh_mean = float(np.mean(coherence))
     st_coh_p95 = float(np.percentile(coherence, 95))
-
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-    tophat = cv2.morphologyEx(img_gray, cv2.MORPH_TOPHAT, kernel)
-    blackhat = cv2.morphologyEx(img_gray, cv2.MORPH_BLACKHAT, kernel)
-    needle_resp = np.maximum(tophat, blackhat)
-    needle_p99 = float(np.percentile(needle_resp, 99))
-    needle_p99_to_mean = float(needle_p99 / (np.mean(needle_resp) + EPSILON))
 
     # Features for detecting the unreal image defect.
 
@@ -242,32 +246,31 @@ def compute_image_features(img_path):
     # We convert the image to the CIE LAB color space to look for chromatic
     # anomalies.
     img_lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
-    a_centered = img_lab[:][:][1] - 128.0
-    b_centered = img_lab[:][:][2] - 128.0
+    a_centered = img_lab[:, :, 1] - 128.0
+    b_centered = img_lab[:, :, 2] - 128.0
     chroma = np.sqrt(a_centered ** 2 + b_centered ** 2)
     chroma_p95 = float(np.percentile(chroma, 95))
 
-    h_crop, w_crop = 8 * grid_height, 12 * grid_width
-    gray_blocks = img_gray[:h_crop, :w_crop].reshape(8, grid_height, 12, 
-                                                     grid_width)
+    # We measure the spatial disporportion of our image.
+    h_crop, w_crop = GRID_HEIGHT * patch_height, GRID_WIDTH * patch_width
+    gray_blocks = img_gray[:h_crop, :w_crop].reshape(GRID_HEIGHT, patch_height, 
+                                                     GRID_WIDTH, patch_width)
     grid_gray_std = gray_blocks.std(axis=(1, 3)).astype(np.float32)
     patch_std_cv = float(np.std(grid_gray_std) / (np.mean(grid_gray_std) + 
                                                   EPSILON))
 
     return np.array(
-         [laplacian_var, laplacian_mean, laplacian_mean_norm, patch_lap_median,
-         patch_lap_p25, patch_lap_p90, 
+         [laplacian_var, laplacian_mean, laplacian_mean_norm, 
+         patch_lap_median, patch_lap_p25, patch_lap_p90, 
          smooth_patches_lt2, smooth_patches_lt10,
          grad_retention_global, grad_ret_p25, grad_ret_p90,
-        border_min_4_lap_to_inner, border_p15_lap_to_inner,
-         abs_dead_border_ratio,
-         border_smooth_lap_max, border_min4_mf_to_inner,
-        st_coh_mean, st_coh_p95, hf_coh_mean, hf_coh_p90,
-        mf_coh_p90,
-         needle_p99_to_mean, line_to_disk_ratio, 
-         color_cast_ratio, chroma_p95, patch_std_cv,
-         black_void],
-        dtype=np.float32)
+         border_min_4_lap_to_inner, border_p15_lap_to_inner,
+         abs_dead_border_ratio, border_smooth_lap_max, border_min4_mf_to_inner,
+         st_coh_mean, st_coh_p95, hf_coh_mean, hf_coh_p90, mf_coh_p90,
+         needle_p99_to_mean, line_to_disk_ratio, color_cast_ratio, chroma_p95, 
+         patch_std_cv, black_void],
+        dtype=np.float32
+    )
 
 def get_features(df):
     paths = []
@@ -279,17 +282,14 @@ def get_features(df):
     with ProcessPoolExecutor() as executor:
         features = list(executor.map(compute_image_features, paths, chunksize=32))
 
-    #features = []
-    #for path in paths:
-    #    features.append(compute_image_features(path))
-
     return np.vstack(features)
 
 def log_loss(y_test, y_pred):
     # We clip y_pred to avoid getting log(0).
     y_pred_clipped = np.clip(y_pred, EPSILON, 1.0 - EPSILON)
 
-    return -np.mean(y_test * np.log(y_pred_clipped) + (1 - y_test) * np.log(1 - y_pred_clipped))
+    return -np.mean(y_test * np.log(y_pred_clipped) + (1 - y_test) * 
+                    np.log(1 - y_pred_clipped))
 
 if __name__ == '__main__':
     df = pd.read_csv(CSV_PATH)
@@ -366,14 +366,14 @@ if __name__ == '__main__':
         mae_mean = per_label_mae[:, i].mean()
         print(f'{label:<20} | F1: {f1_mean:.4f} | MAE: {mae_mean:.4f}')
 
-    print('\nFeature importances')
-
     importance_df = pd.DataFrame({
         'feature': FEATURE_NAMES,
         'importance': feature_importances
     }).sort_values('importance', ascending=False)
 
-    print(importance_df)
+    if DISPLAY_FEATURE_IMPORTANCES:
+        print('\nFeature importances')
+        print(importance_df)
 
     # We create a final model and save it.
     final_model = XGBRegressor(
