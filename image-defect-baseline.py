@@ -308,6 +308,11 @@ if __name__ == '__main__':
 
     feature_importances = np.zeros(len(FEATURE_NAMES), dtype=np.float32);
 
+    if xgb_device == 'cuda':
+        print('Training model on GPU')
+    else:
+        print('Training model on CPU')
+
     for fold, (train_idx, test_idx) in enumerate(splitter.split(x, y, groups=groups)):
         x_train, y_train = x[train_idx], y[train_idx]
         x_test, y_test = x[test_idx], y[test_idx]
@@ -324,7 +329,8 @@ if __name__ == '__main__':
             objective="binary:logistic",
             eval_metric="logloss",
             random_state=67,
-            n_jobs=-1
+            n_jobs=-1,
+            device='cuda'
         )
 
         model.fit(x_train, y_train, verbose=50)
@@ -388,7 +394,8 @@ if __name__ == '__main__':
         objective="binary:logistic",
         eval_metric="logloss",
         random_state=67,
-        n_jobs=-1
+        n_jobs=-1,
+        device='cuda'
     )
 
     print ('\nTraining final model.')
