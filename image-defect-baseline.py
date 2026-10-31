@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
+from tqdm import tqdm
 from xgboost import XGBRegressor
 from concurrent.futures import ProcessPoolExecutor
 from sklearn.model_selection import GroupKFold
@@ -280,7 +281,8 @@ def get_features(df):
 
     # For each image, we calculate its features in a new process.
     with ProcessPoolExecutor() as executor:
-        features = list(executor.map(compute_image_features, paths, chunksize=32))
+        features = list(tqdm(executor.map(compute_image_features, paths,
+                                           chunksize=32), total=len(paths)))
 
     return np.vstack(features)
 
@@ -294,8 +296,10 @@ def log_loss(y_test, y_pred):
 if __name__ == '__main__':
     df = pd.read_csv(CSV_PATH)
 
+    print('Calculating image features')
     x = get_features(df)
     y = df[LABELS].values.astype(np.float32)
+
     groups = df['set'].values
 
     splitter = GroupKFold(n_splits=5)
@@ -307,11 +311,6 @@ if __name__ == '__main__':
     per_label_mae = np.zeros((splitter.get_n_splits(), len(LABELS)), dtype=np.float32)
 
     feature_importances = np.zeros(len(FEATURE_NAMES), dtype=np.float32);
-
-    if xgb_device == 'cuda':
-        print('Training model on GPU')
-    else:
-        print('Training model on CPU')
 
     for fold, (train_idx, test_idx) in enumerate(splitter.split(x, y, groups=groups)):
         x_train, y_train = x[train_idx], y[train_idx]
