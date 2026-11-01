@@ -231,10 +231,14 @@ def log_loss(y_true, y_pred) -> float:
     return float(bce.item())
 
 if __name__ == '__main__':
+    torch.manual_seed(67)
+
     device = get_device()
 
     if device.type != 'cuda':
         print('GPU not found. Running on CPU.\n')
+    else:
+        torch.cuda.manual_seed_all(67)
 
     df = pd.read_csv(CSV_PATH)    
 
