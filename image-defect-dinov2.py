@@ -17,7 +17,7 @@ from tqdm import tqdm
 CSV_PATH = 'data/splatdata.csv'
 IMG_DIR_PATH = 'data/images/'
 FINAL_MODEL_SAVE_DIR ='model'
-FINAL_MODEL_SAVE_NAME = 'baseline.json'
+FINAL_MODEL_SAVE_NAME = 'image-defect-dinov2.pt'
 
 N_SPLITS = 5
 

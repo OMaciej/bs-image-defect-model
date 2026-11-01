@@ -13,7 +13,7 @@ from sklearn.metrics import f1_score, mean_absolute_error
 CSV_PATH = 'data/splatdata.csv'
 IMG_DIR_PATH = 'data/images/'
 FINAL_MODEL_SAVE_DIR ='model'
-FINAL_MODEL_SAVE_NAME = 'baseline.json'
+FINAL_MODEL_SAVE_NAME = 'image-defect-baseline.json'
 DISPLAY_FEATURE_IMPORTANCES = False
 
 # The width and height of the grid we will be dividing the image into (measured
