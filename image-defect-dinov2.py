@@ -286,7 +286,7 @@ if __name__ == '__main__':
         f1_scores[fold] = f1_mean
         bce_scores[fold] = bce
 
-        print(f'F1: {f1_mean.item():.4f} | BCE: {bce.item():.4f}')
+        print(f'F1: {f1_mean.item():.4f} | BCE: {bce:.4f}')
 
         for i, label in enumerate(LABELS):
             per_label_f1_scores[fold, i] = f1_per_label[i]
@@ -296,8 +296,8 @@ if __name__ == '__main__':
 
     print('\nSummary')
     print(f'F1: {f1_scores.mean(dim=0).item():.4f} (+- '
-          f'{f1_scores.std(correction=0).item()}) | BCE: '
-          f'{bce_scores.mean(dim=0).item():.4f} (+- {bce_scores.std(correction=0).item()})')
+          f'{f1_scores.std(correction=0).item():.4f}) | BCE: '
+          f'{bce_scores.mean(dim=0).item():.4f} (+- {bce_scores.std(correction=0).item():.4f})')
 
     print('\nPer-label metrics')
     for i, label in enumerate(LABELS):
