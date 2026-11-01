@@ -8,6 +8,8 @@ import torchvision.transforms as transforms
 from torchcodec.decoders import decode_image
 from torch.utils.data import Dataset, DataLoader
 
+from tqdm import tqdm
+
 # Constants
 CSV_PATH = 'data/splatdata.csv'
 IMG_DIR_PATH = 'data/images/'
@@ -85,7 +87,7 @@ def extract_features(df, device) -> torch.Tensor:
 
     extracted_features = []
 
-    for batch in data_loader:
+    for batch in tqdm(data_loader, total=len(data_loader)):
         # We move our image to the GPU and standardize it.
         batch_dev = batch.to(device, non_blocking=is_device_cuda).float().div_(255.0)
         batch_dev = (batch_dev - mean) / std
