@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 # Constants
 CSV_PATH = 'data/splatdata.csv'
-IMG_DIR_PATH = 'data/images/'
+IMG_DIR_PATH = 'data/classification_data/'
 FINAL_MODEL_SAVE_DIR ='model'
 FINAL_MODEL_SAVE_NAME = 'image-defect-dinov2.pt'
 

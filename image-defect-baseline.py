@@ -11,7 +11,7 @@ from sklearn.metrics import f1_score, mean_absolute_error
 
 # Constants
 CSV_PATH = 'data/splatdata.csv'
-IMG_DIR_PATH = 'data/images/'
+IMG_DIR_PATH = 'data/classification_data/'
 FINAL_MODEL_SAVE_DIR ='model'
 FINAL_MODEL_SAVE_NAME = 'image-defect-baseline.json'
 DISPLAY_FEATURE_IMPORTANCES = False
