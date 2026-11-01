@@ -14,12 +14,12 @@ from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
 
 # Constants
-DEBUG = True
-
 CSV_PATH = 'data/splatdata.csv'
 IMG_DIR_PATH = 'data/images/'
 FINAL_MODEL_SAVE_DIR ='model'
 FINAL_MODEL_SAVE_NAME = 'baseline.json'
+
+N_SPLITS = 5
 
 DINO_REPO = 'facebookresearch/dinov2'
 DINO_MODEL_NAME = 'dinov2_vits14'
@@ -236,49 +236,88 @@ if __name__ == '__main__':
     if device.type != 'cuda':
         print('GPU not found. Running on CPU.\n')
 
-    df = pd.read_csv(CSV_PATH, nrows=256)    
+    df = pd.read_csv(CSV_PATH)    
 
-    if not DEBUG:
-        print('Extracting features using DINOv2.')
-        x = extract_features(df, device)
-        y = torch.tensor(df[LABELS].values, dtype=torch.float32, device=device)
+    print('Extracting features using DINOv2.')
+    x = extract_features(df, device)
+    y = torch.tensor(df[LABELS].values, dtype=torch.float32, device=device)
 
-        splitter = GroupKFold(n_splits=2)
-        groups = df['set'].values
+    splitter = GroupKFold(n_splits=N_SPLITS)
+    groups = df['set'].values
 
-        for fold, (train_idx, test_idx) in enumerate(splitter.split(x, y, groups=groups)):
-            print(f'\nFOLD {fold+1}/{splitter.get_n_splits()}')
+    f1_scores = torch.zeros(N_SPLITS, dtype=torch.float32, device=device)
+    bce_scores = torch.zeros(N_SPLITS, dtype=torch.float32, device=device)
 
-            train_idx = torch.tensor(train_idx, dtype=torch.long, device=device)
-            test_idx = torch.tensor(test_idx, dtype=torch.long, device=device)
+    per_label_f1_scores = torch.zeros((N_SPLITS, len(LABELS)), 
+                                      dtype=torch.float32, device=device)
+    per_label_mae = torch.zeros((N_SPLITS, len(LABELS)), dtype=torch.float32, 
+                                device=device)
 
-            x_train, y_train = x[train_idx], y[train_idx]
-            x_test, y_test = x[test_idx], y[test_idx]
+    for fold, (train_idx, test_idx) in enumerate(splitter.split(x, y, groups=groups)):
+        print(f'\nFOLD {fold+1}/{splitter.get_n_splits()}')
 
-            model = train_model(x_train, y_train, device)
+        train_idx = torch.tensor(train_idx, dtype=torch.long, device=device)
+        test_idx = torch.tensor(test_idx, dtype=torch.long, device=device)
 
-            y_pred = predict(model, x_test)
+        x_train, y_train = x[train_idx], y[train_idx]
+        x_test, y_test = x[test_idx], y[test_idx]
 
-            bce = log_loss(y_test, y_pred)
-            print(f'BCE: {bce}')
-    else:
-        x_train_dummy, y_train_dummy = torch.randn(100, 1152, device=device), torch.rand(100, 4, device=device)
-        x_test_dummy, y_test_dummy = torch.randn(25, 1152, device=device), torch.rand(25, 4, device=device)
-        y_test_bin_dummy = (y_test_dummy >= 0.5).float()
-        y_train_bin_dummy = (y_train_dummy >= 0.5).float()
+        y_train_bin, y_test_bin = (y_train >= 0.5).float(), (y_test >= 0.5).float()
 
-        model = train_model(x_train_dummy, y_train_dummy, device)
+        model = train_model(x_train, y_train, device)
 
-        y_pred_test_dummy = predict(model, x_test_dummy)
-        y_pred_train_dummy = predict(model, x_train_dummy)
+        y_pred_train = predict(model, x_train)
+        y_pred_test = predict(model, x_test)
 
-        bce = log_loss(y_test_dummy, y_pred_test_dummy)
+        f1_thresholds = find_best_f1_thresholds(y_train_bin, y_pred_train)
+        y_pred_bin = (y_pred_test >= f1_thresholds).float()
 
-        f1_thresholds = find_best_f1_thresholds(y_train_bin_dummy, y_pred_train_dummy)
-
-        y_pred_bin_dummy = (y_pred_test_dummy >= f1_thresholds).float()
-
-        f1_per_label = f1_score_per_label(y_test_bin_dummy, y_pred_bin_dummy)
+        f1_per_label = f1_score_per_label(y_test_bin, y_pred_bin)
         f1_mean = f1_per_label.mean()
 
-        print(f'F1: {f1_mean} | BCE: {bce}')
+        mae_per_label = torch.abs(y_test - y_pred_test).mean(dim=0)
+
+        bce = log_loss(y_test, y_pred_test)
+
+        f1_scores[fold] = f1_mean
+        bce_scores[fold] = bce
+
+        print(f'F1: {f1_mean.item():.4f} | BCE: {bce.item():.4f}')
+
+        for i, label in enumerate(LABELS):
+            per_label_f1_scores[fold, i] = f1_per_label[i]
+            per_label_mae[fold, i] = mae_per_label[i]
+            print(f'{label:<18} | F1: {f1_per_label[i].item():.4f} | '
+                  f'MAE: {mae_per_label[i].item():.4f}')
+
+    print('\nSummary')
+    print(f'F1: {f1_scores.mean(dim=0).item():.4f} (+- '
+          f'{f1_scores.std(correction=0).item()}) | BCE: '
+          f'{bce_scores.mean(dim=0).item():.4f} (+- {bce_scores.std(correction=0).item()})')
+
+    print('\nPer-label metrics')
+    for i, label in enumerate(LABELS):
+        print(f'{label:<18} | F1: {per_label_f1_scores[:, i].mean(dim=0).item():.4f}'
+              f' | MAE: {float(per_label_mae[:, i].mean(dim=0)):.4f}')
+
+    print('\nTraining final model.')
+    final_model = train_model(x, y, device)
+
+    y_bin = (y >= 0.5).float()
+    final_pred = predict(final_model, x)
+    final_f1_thresholds = find_best_f1_thresholds(y_bin, final_pred)
+
+    if not os.path.isdir(FINAL_MODEL_SAVE_DIR):
+        os.makedirs(FINAL_MODEL_SAVE_DIR)
+
+    save_path = os.path.join(FINAL_MODEL_SAVE_DIR, FINAL_MODEL_SAVE_NAME)
+
+    print(f'\nSaving final model to {save_path}.')
+
+    final_model_cpu = final_model.to('cpu')
+    torch.save({
+        'dinov2_backbone': DINO_MODEL_NAME,
+        'image_size': (DINO_IMG_HEIGHT, DINO_IMG_WIDTH),
+        'thresholds': final_f1_thresholds.cpu(),
+        'model_state_dict': final_model_cpu.state_dict()
+    }, save_path)
