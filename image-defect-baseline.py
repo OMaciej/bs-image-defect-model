@@ -293,6 +293,21 @@ def log_loss(y_test, y_pred):
     return -np.mean(y_test * np.log(y_pred_clipped) + (1 - y_test) * 
                     np.log(1 - y_pred_clipped))
 
+def find_best_f1_thresholds(y_true_bin, y_pred):
+    best_thresholds = np.full(y_true_bin.shape[1], 0.5, dtype=np.float32)
+    candidates_thresholds = np.linspace(0.2, 0.7, 50)
+
+    for i in range(y_true_bin.shape[1]):
+        best_score = -1.0
+        for threshold in candidates_thresholds:
+            score = f1_score(y_true_bin[:, i], (y_pred[:, i] >= threshold).astype(int),
+                             zero_division=0)
+            if score > best_score:
+                best_score = score
+                best_thresholds[i] = threshold
+
+    return best_thresholds
+
 if __name__ == '__main__':
     df = pd.read_csv(CSV_PATH)
 
@@ -329,21 +344,24 @@ if __name__ == '__main__':
             eval_metric="logloss",
             random_state=67,
             n_jobs=-1,
-            device='cuda'
         )
 
         model.fit(x_train, y_train, verbose=50)
 
         y_pred = model.predict(x_test)
+        y_pred_train = model.predict(x_train)
 
         feature_importances += model.feature_importances_ / splitter.get_n_splits()
 
+        y_train_bin = (y_train >= 0.5).astype(int)
         y_test_bin = (y_test >= 0.5).astype(int)
-        y_pred_bin = (y_pred >= 0.5).astype(int)
 
-        f1 = f1_score(y_test_bin, y_pred_bin, average='macro')
         bce = log_loss(y_test, y_pred)
 
+        thresholds = find_best_f1_thresholds(y_train_bin, y_pred_train)
+        y_pred_bin = (y_pred >= thresholds).astype(int)
+
+        f1 = f1_score(y_test_bin, y_pred_bin, average='macro')
         f1_scores.append(f1)
         bce_scores.append(bce)
 
@@ -394,7 +412,6 @@ if __name__ == '__main__':
         eval_metric="logloss",
         random_state=67,
         n_jobs=-1,
-        device='cuda'
     )
 
     print ('\nTraining final model.')
