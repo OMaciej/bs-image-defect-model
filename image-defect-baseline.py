@@ -295,7 +295,7 @@ def log_loss(y_test, y_pred):
 
 def find_best_f1_thresholds(y_true_bin, y_pred):
     best_thresholds = np.full(y_true_bin.shape[1], 0.5, dtype=np.float32)
-    candidates_thresholds = np.linspace(0.2, 0.7, 50)
+    candidates_thresholds = np.linspace(0.2, 0.7, 51)
 
     for i in range(y_true_bin.shape[1]):
         best_score = -1.0
